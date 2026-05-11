@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gyro 3D Universe</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Space+Mono:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --rx: 0deg;
+    --ry: 0deg;
+    --depth1: 0px, 0px;
+    --depth2: 0px, 0px;
+    --depth3: 0px, 0px;
+    --depth4: 0px, 0px;
+    --glow: #00f5ff;
+    --accent: #ff006e;
+    --gold: #ffd700;
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #000008;
+    font-family: 'Space Mono', monospace;
+    color: #fff;
+    cursor: none;
+  }
+
+  /* Custom cursor */
+  #cursor {
+    position: fixed;
+    width: 12px; height: 12px;
+    background: var(--glow);
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 9999;
+    mix-blend-mode: screen;
+    transition: transform 0.1s ease;
+    box-shadow: 0 0 20px var(--glow), 0 0 40px var(--glow);
+  }
+
+  /* Starfield layers */
+  #scene {
+    position: fixed;
+    inset: 0;
+    perspective: 900px;
+    perspective-origin: 50% 50%;
+    overflow: hidden;
+  }
+
+  .stars-layer {
+    position: absolute;
+    inset: -20%;
+    width: 140%; height: 140%;
+    will-change: transform;
+    transition: transform 0.08s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+
+  canvas#stars1 { z-index: 1; }
+  canvas#stars2 { z-index: 2; }
+  canvas#stars3 { z-index: 3; }
+
+  /* Nebula background */
+  .nebula {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(80px);
+    opacity: 0.18;
+    pointer-events: none;
+  }
+  .nebula-1 { width: 600px; height: 400px; background: radial-gradient(ellipse, #0066ff, transparent); top: 10%; left: 5%; }
+  .nebula-2 { width: 500px; height: 500px; background: radial-gradient(ellipse, #ff0088, transparent); bottom: 5%; right: 10%; }
+  .nebula-3 { width: 400px; height: 300px; background: radial-gradient(ellipse, #00ffaa, transparent); top: 40%; left: 40%; }
+
+  /* Main 3D card */
+  #card-wrapper {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    perspective: 800px;
+  }
+
+  #card {
+    position: relative;
+    width: min(380px, 88vw);
+    transform-style: preserve-3d;
+    transform: rotateX(var(--rx)) rotateY(var(--ry));
+    transition: transform 0.12s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    will-change: transform;
+  }
+
+  .card-face {
+    background: linear-gradient(135deg,
+      rgba(0,20,40,0.95) 0%,
+      rgba(0,10,30,0.98) 50%,
+      rgba(5,0,25,0.95) 100%);
+    border: 1px solid rgba(0,245,255,0.25);
+    border-radius: 20px;
+    padding: 40px 36px;
+    position: relative;
+    overflow: hidden;
+    box-shadow:
+      0 0 0 1px rgba(0,245,255,0.1),
+      0 30px 80px rgba(0,0,0,0.8),
+      0 0 60px rgba(0,245,255,0.05) inset;
+  }
+
+  /* Holographic shimmer */
+  .card-face::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      105deg,
+      transparent 30%,
+      rgba(0,245,255,0.04) 45%,
+      rgba(255,0,110,0.04) 55%,
+      transparent 70%
+    );
+    border-radius: inherit;
+    pointer-events: none;
+    animation: shimmer 4s ease-in-out infinite alternate;
+  }
+
+  @keyframes shimmer {
+    0%   { opacity: 0.4; transform: translateX(-20px); }
+    100% { opacity: 1;   transform: translateX(20px); }
+  }
+
+  /* Scanlines */
+  .card-face::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 3px,
+      rgba(0,245,255,0.015) 3px,
+      rgba(0,245,255,0.015) 4px
+    );
+    border-radius: inherit;
+    pointer-events: none;
+  }
+
+  /* Floating layers (parallax inside card) */
+  .layer {
+    position: relative;
+    will-change: transform;
+    transition: transform 0.08s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+
+  /* Corner decorations */
+  .corner {
+    position: absolute;
+    width: 20px; height: 20px;
+    border-color: var(--glow);
+    border-style: solid;
+    opacity: 0.7;
+  }
+  .corner-tl { top: 16px; left: 16px; border-width: 2px 0 0 2px; }
+  .corner-tr { top: 16px; right: 16px; border-width: 2px 2px 0 0; }
+  .corner-bl { bottom: 16px; left: 16px; border-width: 0 0 2px 2px; }
+  .corner-br { bottom: 16px; right: 16px; border-width: 0 2px 2px 0; }
+
+  /* Typography */
+  .eyebrow {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.35em;
+    color: var(--glow);
+    text-transform: uppercase;
+    opacity: 0.7;
+    margin-bottom: 14px;
+  }
+
+  h1 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(28px, 7vw, 42px);
+    font-weight: 900;
+    line-height: 1.05;
+    letter-spacing: -0.01em;
+    background: linear-gradient(135deg, #ffffff 0%, var(--glow) 50%, #ffffff 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 18px;
+    text-shadow: none;
+    filter: drop-shadow(0 0 20px rgba(0,245,255,0.4));
+  }
+
+  .subtitle {
+    font-size: 12px;
+    line-height: 1.7;
+    color: rgba(255,255,255,0.55);
+    margin-bottom: 30px;
+    border-left: 2px solid rgba(0,245,255,0.4);
+    padding-left: 14px;
+  }
+
+  /* Stats row */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: rgba(0,245,255,0.1);
+    border: 1px solid rgba(0,245,255,0.15);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 24px;
+  }
+
+  .stat {
+    background: rgba(0,10,25,0.9);
+    padding: 14px 10px;
+    text-align: center;
+  }
+
+  .stat-val {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--glow);
+    display: block;
+    text-shadow: 0 0 10px var(--glow);
+  }
+
+  .stat-label {
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    color: rgba(255,255,255,0.35);
+    text-transform: uppercase;
+    margin-top: 3px;
+    display: block;
+  }
+
+  /* Orbit rings (3D floating elements) */
+  .orbit-ring {
+    position: absolute;
+    border: 1px solid rgba(0,245,255,0.3);
+    border-radius: 50%;
+    top: 50%; left: 50%;
+    transform-style: preserve-3d;
+    pointer-events: none;
+  }
+
+  /* Action bar */
+  .action-bar {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .btn-primary {
+    flex: 1;
+    background: linear-gradient(135deg, rgba(0,245,255,0.15), rgba(0,245,255,0.05));
+    border: 1px solid rgba(0,245,255,0.5);
+    border-radius: 8px;
+    padding: 12px 20px;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    color: var(--glow);
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.2s ease;
+    text-shadow: 0 0 8px var(--glow);
+    box-shadow: 0 0 20px rgba(0,245,255,0.05) inset;
+  }
+
+  .btn-primary:hover {
+    background: rgba(0,245,255,0.2);
+    box-shadow: 0 0 30px rgba(0,245,255,0.2), 0 0 20px rgba(0,245,255,0.1) inset;
+  }
+
+  .btn-icon {
+    width: 44px; height: 44px;
+    border: 1px solid rgba(255,0,110,0.4);
+    border-radius: 8px;
+    background: rgba(255,0,110,0.08);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    font-size: 18px;
+    transition: all 0.2s;
+    flex-shrink: 0;
+  }
+
+  .btn-icon:hover {
+    background: rgba(255,0,110,0.18);
+    box-shadow: 0 0 20px rgba(255,0,110,0.2);
+  }
+
+  /* Floating orb (deeper layer) */
+  #orb {
+    position: fixed;
+    width: 140px; height: 140px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%,
+      rgba(0,245,255,0.6) 0%,
+      rgba(0,100,200,0.3) 40%,
+      rgba(0,0,50,0.1) 100%);
+    filter: blur(2px);
+    box-shadow:
+      0 0 40px rgba(0,245,255,0.4),
+      0 0 80px rgba(0,245,255,0.2),
+      inset 0 0 40px rgba(0,245,255,0.1);
+    z-index: 6;
+    pointer-events: none;
+    will-change: transform;
+    transition: transform 0.15s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+
+  #orb::after {
+    content: '';
+    position: absolute;
+    top: 15%; left: 20%;
+    width: 30%; height: 20%;
+    background: rgba(255,255,255,0.4);
+    border-radius: 50%;
+    filter: blur(6px);
+    transform: rotate(-30deg);
+  }
+
+  /* Floating particles */
+  .particle {
+    position: fixed;
+    width: 3px; height: 3px;
+    border-radius: 50%;
+    background: var(--glow);
+    pointer-events: none;
+    z-index: 5;
+    will-change: transform;
+    transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    box-shadow: 0 0 6px var(--glow);
+  }
+
+  /* HUD elements */
+  .hud {
+    position: fixed;
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: rgba(0,245,255,0.5);
+    letter-spacing: 0.1em;
+    z-index: 20;
+    pointer-events: none;
+  }
+
+  #hud-tl { top: 20px; left: 20px; }
+  #hud-tr { top: 20px; right: 20px; text-align: right; }
+  #hud-bl { bottom: 20px; left: 20px; }
+  #hud-br { bottom: 20px; right: 20px; text-align: right; }
+
+  .hud-line { display: block; line-height: 1.8; }
+
+  /* Crosshair */
+  #crosshair {
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 40px; height: 40px;
+    pointer-events: none;
+    z-index: 15;
+    opacity: 0.25;
+  }
+
+  #crosshair::before, #crosshair::after {
+    content: '';
+    position: absolute;
+    background: var(--glow);
+  }
+
+  #crosshair::before { top: 50%; left: 0; right: 0; height: 1px; transform: translateY(-50%); }
+  #crosshair::after  { left: 50%; top: 0; bottom: 0; width: 1px; transform: translateX(-50%); }
+
+  /* Permission prompt */
+  #permission-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,8,0.95);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    flex-direction: column;
+    gap: 20px;
+    text-align: center;
+    padding: 40px;
+    backdrop-filter: blur(10px);
+  }
+
+  #permission-overlay h2 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 22px;
+    color: var(--glow);
+    text-shadow: 0 0 20px var(--glow);
+  }
+
+  #permission-overlay p {
+    color: rgba(255,255,255,0.5);
+    font-size: 13px;
+    line-height: 1.7;
+    max-width: 300px;
+  }
+
+  #enable-btn {
+    background: transparent;
+    border: 1px solid var(--glow);
+    color: var(--glow);
+    font-family: 'Orbitron', sans-serif;
+    font-size: 12px;
+    letter-spacing: 0.2em;
+    padding: 14px 32px;
+    cursor: pointer;
+    text-transform: uppercase;
+    border-radius: 6px;
+    transition: all 0.2s;
+    text-shadow: 0 0 8px var(--glow);
+    box-shadow: 0 0 20px rgba(0,245,255,0.1);
+  }
+
+  #enable-btn:hover {
+    background: rgba(0,245,255,0.1);
+    box-shadow: 0 0 40px rgba(0,245,255,0.3);
+  }
+
+  #skip-btn {
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.3);
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    cursor: pointer;
+    text-decoration: underline;
+    letter-spacing: 0.05em;
+  }
+
+  .gyro-icon { font-size: 48px; animation: pulse-icon 2s ease-in-out infinite; }
+
+  @keyframes pulse-icon {
+    0%, 100% { transform: scale(1) rotate(-5deg); opacity: 0.8; }
+    50% { transform: scale(1.1) rotate(5deg); opacity: 1; }
+  }
+
+  /* Status dot */
+  .status-dot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--glow);
+    box-shadow: 0 0 6px var(--glow);
+    margin-right: 6px;
+    animation: blink 1.5s ease-in-out infinite;
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.2; }
+  }
+
+  /* Tilt indicator arc */
+  #tilt-meter {
+    position: fixed;
+    bottom: 50px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+    pointer-events: none;
+  }
+
+  #tilt-meter svg { overflow: visible; }
+
+  /* Ring animation */
+  @keyframes ring-rotate {
+    from { transform: translate(-50%, -50%) rotateX(70deg) rotateZ(0deg); }
+    to   { transform: translate(-50%, -50%) rotateX(70deg) rotateZ(360deg); }
+  }
+
+  #ring1 {
+    position: fixed;
+    width: 300px; height: 300px;
+    border: 1px solid rgba(0,245,255,0.08);
+    border-radius: 50%;
+    top: 50%; left: 50%;
+    animation: ring-rotate 20s linear infinite;
+    pointer-events: none;
+    z-index: 4;
+    transform-style: preserve-3d;
+  }
+
+  #ring2 {
+    position: fixed;
+    width: 500px; height: 500px;
+    border: 1px solid rgba(255,0,110,0.06);
+    border-radius: 50%;
+    top: 50%; left: 50%;
+    animation: ring-rotate 35s linear infinite reverse;
+    pointer-events: none;
+    z-index: 4;
+    transform-style: preserve-3d;
+  }
+</style>
+</head>
+<body>
+
+<!-- Custom cursor -->
+<div id="cursor"></div>
+
+<!-- Permission overlay (iOS needs explicit permission for DeviceOrientation) -->
+<div id="permission-overlay">
+  <div class="gyro-icon">📡</div>
+  <h2>GYRO 3D</h2>
+  <p>Tilt your device to experience immersive 3D depth. Enable motion sensors to begin.</p>
+  <button id="enable-btn">ENABLE GYROSCOPE</button>
+  <button id="skip-btn">Use mouse instead</button>
+</div>
+
+<!-- Scene -->
+<div id="scene">
+  <div class="nebula nebula-1"></div>
+  <div class="nebula nebula-2"></div>
+  <div class="nebula nebula-3"></div>
+  <canvas id="stars1" class="stars-layer"></canvas>
+  <canvas id="stars2" class="stars-layer"></canvas>
+  <canvas id="stars3" class="stars-layer"></canvas>
+</div>
+
+<!-- Rings -->
+<div id="ring1"></div>
+<div id="ring2"></div>
+
+<!-- Floating orb -->
+<div id="orb" style="top: calc(30% - 70px); left: calc(70% - 70px);"></div>
+
+<!-- Particles -->
+<!-- generated by JS -->
+
+<!-- HUD overlays -->
+<div class="hud" id="hud-tl">
+  <span class="hud-line"><span class="status-dot"></span>SYS ONLINE</span>
+  <span class="hud-line" id="hud-tilt">TILT: 0° / 0°</span>
+</div>
+<div class="hud" id="hud-tr">
+  <span class="hud-line">GYRO 3D v1.0</span>
+  <span class="hud-line" id="hud-sensor">SENSOR: MOUSE</span>
+</div>
+<div class="hud" id="hud-bl">
+  <span class="hud-line">X: <span id="hud-x">0.00</span></span>
+  <span class="hud-line">Y: <span id="hud-y">0.00</span></span>
+</div>
+<div class="hud" id="hud-br">
+  <span class="hud-line">∿ PARALLAX</span>
+  <span class="hud-line">∿ DEPTH ON</span>
+</div>
+
+<!-- Crosshair -->
+<div id="crosshair"></div>
+
+<!-- Main card -->
+<div id="card-wrapper">
+  <div id="card">
+    <div class="card-face">
+      <div class="corner corner-tl"></div>
+      <div class="corner corner-tr"></div>
+      <div class="corner corner-bl"></div>
+      <div class="corner corner-br"></div>
+
+      <div class="layer" id="layer-top" style="--d: 1">
+        <p class="eyebrow">// MOTION SENSOR ACTIVE</p>
+      </div>
+
+      <div class="layer" id="layer-title" style="--d: 2">
+        <h1>GYRO<br>SPACE</h1>
+      </div>
+
+      <div class="layer" id="layer-sub" style="--d: 1.5">
+        <p class="subtitle">
+          Tilt your phone to explore depth.<br>
+          Layers move at different speeds creating real parallax.
+        </p>
+      </div>
+
+      <div class="layer" id="layer-stats" style="--d: 1">
+        <div class="stats">
+          <div class="stat">
+            <span class="stat-val" id="stat-x">0°</span>
+            <span class="stat-label">Pitch</span>
+          </div>
+          <div class="stat">
+            <span class="stat-val" id="stat-y">0°</span>
+            <span class="stat-label">Roll</span>
+          </div>
+          <div class="stat">
+            <span class="stat-val" id="stat-depth">5</span>
+            <span class="stat-label">Layers</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="layer" id="layer-btn" style="--d: 2.5">
+        <div class="action-bar">
+          <button class="btn-primary">EXPLORE DEPTH</button>
+          <div class="btn-icon">⟳</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────
+let tiltX = 0, tiltY = 0;
+let targetX = 0, targetY = 0;
+let currentX = 0, currentY = 0;
+let usingGyro = false;
+const MAX_TILT = 22;
+
+// ── Canvas stars ──────────────────────────────────────
+function initStars() {
+  const configs = [
+    { id: 'stars1', count: 200, size: [1, 1.5], speed: 0.025, color: 'rgba(255,255,255,' },
+    { id: 'stars2', count: 100, size: [1.5, 2.5], speed: 0.05,  color: 'rgba(150,220,255,' },
+    { id: 'stars3', count: 50,  size: [2,   4],   speed: 0.085, color: 'rgba(0,245,255,'  },
+  ];
+
+  configs.forEach(cfg => {
+    const canvas = document.getElementById(cfg.id);
+    canvas.style.position = 'absolute';
+    canvas.style.inset = '0';
+
+    const resize = () => {
+      canvas.width  = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
+    };
+
+    window.addEventListener('resize', resize);
+    resize();
+
+    const ctx = canvas.getContext('2d');
+    const stars = Array.from({ length: cfg.count }, () => ({
+      x: Math.random() * 140 - 20,   // % of container
+      y: Math.random() * 140 - 20,
+      r: cfg.size[0] + Math.random() * (cfg.size[1] - cfg.size[0]),
+      op: 0.3 + Math.random() * 0.7,
+      tw: Math.random() * Math.PI * 2,
+      ts: 0.005 + Math.random() * 0.01,
+    }));
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      stars.forEach(s => {
+        s.tw += s.ts;
+        const op = s.op * (0.6 + 0.4 * Math.sin(s.tw));
+        ctx.beginPath();
+        ctx.arc(s.x / 100 * canvas.width, s.y / 100 * canvas.height, s.r, 0, Math.PI * 2);
+        ctx.fillStyle = cfg.color + op + ')';
+        ctx.fill();
+      });
+      requestAnimationFrame(draw);
+    }
+    draw();
+
+    // Store speed for parallax
+    canvas._speed = cfg.speed;
+    canvas._cfg = cfg;
+  });
+}
+
+initStars();
+
+// ── Particles ─────────────────────────────────────────
+const particles = [];
+
+function createParticles() {
+  const colors = ['rgba(0,245,255,', 'rgba(255,0,110,', 'rgba(255,215,0,'];
+  for (let i = 0; i < 18; i++) {
+    const el = document.createElement('div');
+    el.className = 'particle';
+    const c = colors[i % colors.length];
+    el.style.cssText = `
+      left: ${10 + Math.random() * 80}%;
+      top:  ${10 + Math.random() * 80}%;
+      background: ${c}0.8)};
+      box-shadow: 0 0 8px ${c}0.6)};
+      width:  ${2 + Math.random() * 3}px;
+      height: ${2 + Math.random() * 3}px;
+    `;
+    el._speed = 0.04 + Math.random() * 0.12;
+    el._baseLeft = parseFloat(el.style.left);
+    el._baseTop  = parseFloat(el.style.top);
+    document.body.appendChild(el);
+    particles.push(el);
+  }
+}
+
+createParticles();
+
+// ── Gyroscope ─────────────────────────────────────────
+const permOverlay = document.getElementById('permission-overlay');
+const enableBtn   = document.getElementById('enable-btn');
+const skipBtn     = document.getElementById('skip-btn');
+
+function startGyro() {
+  if (typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function') {
+    DeviceOrientationEvent.requestPermission()
+      .then(state => {
+        if (state === 'granted') activateGyro();
+        else permOverlay.style.display = 'none'; // fall back to mouse
+      })
+      .catch(() => permOverlay.style.display = 'none');
+  } else {
+    activateGyro();
+  }
+}
+
+function activateGyro() {
+  usingGyro = true;
+  permOverlay.style.display = 'none';
+  document.getElementById('hud-sensor').textContent = 'SENSOR: GYRO';
+
+  window.addEventListener('deviceorientation', e => {
+    // beta = front-back tilt (-180 to 180), gamma = left-right (-90 to 90)
+    const beta  = e.beta  ?? 0;
+    const gamma = e.gamma ?? 0;
+
+    // Normalise: assume phone held upright at ~45° beta
+    targetX = Math.max(-MAX_TILT, Math.min(MAX_TILT, (beta - 45) * 0.6));
+    targetY = Math.max(-MAX_TILT, Math.min(MAX_TILT, gamma * 0.6));
+  }, true);
+}
+
+enableBtn.addEventListener('click', startGyro);
+skipBtn.addEventListener('click', () => {
+  permOverlay.style.display = 'none';
+});
+
+// Check if gyro available without permission (Android / desktop fallback)
+if (window.DeviceOrientationEvent) {
+  window.addEventListener('deviceorientationabsolute', () => {}, { once: true });
+  // Auto-try on non-iOS
+  if (!/iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+    window.addEventListener('deviceorientation', e => {
+      if (e.beta !== null && !usingGyro) {
+        usingGyro = true;
+        permOverlay.style.display = 'none';
+        document.getElementById('hud-sensor').textContent = 'SENSOR: GYRO';
+      }
+      if (usingGyro) {
+        targetX = Math.max(-MAX_TILT, Math.min(MAX_TILT, ((e.beta ?? 45) - 45) * 0.6));
+        targetY = Math.max(-MAX_TILT, Math.min(MAX_TILT, (e.gamma ?? 0) * 0.6));
+      }
+    }, true);
+  }
+}
+
+// ── Mouse fallback ────────────────────────────────────
+document.addEventListener('mousemove', e => {
+  if (usingGyro) return;
+  const cx = window.innerWidth  / 2;
+  const cy = window.innerHeight / 2;
+  targetY =  ((e.clientX - cx) / cx) * MAX_TILT;
+  targetX = -((e.clientY - cy) / cy) * MAX_TILT;
+
+  // Move custom cursor
+  const cur = document.getElementById('cursor');
+  cur.style.left = e.clientX - 6 + 'px';
+  cur.style.top  = e.clientY - 6 + 'px';
+});
+
+// ── Refs ──────────────────────────────────────────────
+const card       = document.getElementById('card');
+const orb        = document.getElementById('orb');
+const layerTop   = document.getElementById('layer-top');
+const layerTitle = document.getElementById('layer-title');
+const layerSub   = document.getElementById('layer-sub');
+const layerStats = document.getElementById('layer-stats');
+const layerBtn   = document.getElementById('layer-btn');
+const statX      = document.getElementById('stat-x');
+const statY      = document.getElementById('stat-y');
+const hudTilt    = document.getElementById('hud-tilt');
+const hudX       = document.getElementById('hud-x');
+const hudY       = document.getElementById('hud-y');
+
+// ── Render loop ───────────────────────────────────────
+const LERP = 0.1;
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function tick() {
+  currentX = lerp(currentX, targetX, LERP);
+  currentY = lerp(currentY, targetY, LERP);
+
+  const rx = currentX.toFixed(2);
+  const ry = currentY.toFixed(2);
+
+  // Card 3D tilt
+  card.style.transform = `rotateX(${rx}deg) rotateY(${ry}deg)`;
+
+  // Parallax inside card
+  const inner = (el, factor) => {
+    const tx = currentY * factor;
+    const ty = -currentX * factor;
+    el.style.transform = `translate(${tx}px, ${ty}px)`;
+  };
+
+  inner(layerTop,   1.2);
+  inner(layerTitle, 2.5);
+  inner(layerSub,   1.8);
+  inner(layerStats, 1.0);
+  inner(layerBtn,   3.2);
+
+  // Orb floating opposite
+  const orbX = window.innerWidth  * 0.7 - 70 - currentY * 4;
+  const orbY = window.innerHeight * 0.3 - 70 + currentX * 4;
+  orb.style.left = orbX + 'px';
+  orb.style.top  = orbY + 'px';
+
+  // Stars parallax
+  ['stars1', 'stars2', 'stars3'].forEach(id => {
+    const c = document.getElementById(id);
+    const s = c._cfg ? c._cfg.speed : 0.03;
+    const tx = currentY * s * 80;
+    const ty = -currentX * s * 80;
+    c.style.transform = `translate(${tx}px, ${ty}px)`;
+  });
+
+  // Particles parallax
+  particles.forEach(p => {
+    const tx = currentY * p._speed * 60;
+    const ty = -currentX * p._speed * 60;
+    p.style.transform = `translate(${tx}px, ${ty}px)`;
+  });
+
+  // HUD updates
+  statX.textContent = Math.abs(rx) + '°';
+  statY.textContent = Math.abs(ry) + '°';
+  hudTilt.textContent = `TILT: ${rx}° / ${ry}°`;
+  hudX.textContent = parseFloat(rx).toFixed(2);
+  hudY.textContent = parseFloat(ry).toFixed(2);
+
+  requestAnimationFrame(tick);
+}
+
+tick();
+
+// Hide overlay after 6s if user doesn't act (auto-mouse mode)
+setTimeout(() => {
+  if (permOverlay.style.display !== 'none') {
+    permOverlay.style.display = 'none';
+  }
+}, 6000);
+</script>
+</body>
+</html>
